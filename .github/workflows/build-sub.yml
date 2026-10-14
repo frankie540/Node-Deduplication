@@ -1,0 +1,110 @@
+name: 订阅合并去重每日自动构建
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 安装依赖
+        run: |
+          sudo apt update
+          sudo apt install -y wget
+
+      - name: 下载并准备 subconverter(v0.9.0)
+        run: |
+          wget https://github.com/tindy2013/subconverter/releases/latest/download/subconverter_linux64.tar.gz
+          tar -zxvf subconverter_linux64.tar.gz
+          cd subconverter
+          chmod +x subconverter
+
+      - name: 拉取订阅 + 动态生成模板 + 转换输出
+        run: |
+          cd subconverter
+          # ========== 修改这里填入你的订阅链接 ==========
+          LINKS=(
+            "https://raw.githubusercontent.com/Huibq/TrojanLinks/master/links/ssr"
+            "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub"
+            "https://raw.githubusercontent.com/ZywChannel/free/main/sub"
+            "https://raw.githubusercontent.com/free18/v2ray/refs/heads/main/v.txt"
+            "https://raw.githubusercontent.com/mfuu/v2ray/master/v2ray"
+            "https://raw.githubusercontent.com/ts-sf/fly/main/v2"
+            "https://raw.githubusercontent.com/chengaopan/AutoMergePublicNodes/master/list.txt"
+            "https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list.txt"
+            "https://raw.githubusercontent.com/shaoyouvip/free/refs/heads/main/base64.txt"
+          )
+
+          > raw.txt
+          > valid_content.tmp
+
+          check_base64(){
+              local input="$1"
+              echo "$input" | base64 -d > /dev/null 2>&1
+              return $?
+          }
+
+          for url in "${LINKS[@]}"; do
+              echo "======================================"
+              echo "正在处理订阅链接: $url"
+              RAW_CONTENT=$(wget -q "$url" -O - | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+              if [[ -z "$RAW_CONTENT" ]]; then
+                echo "警告：该订阅返回为空，跳过"
+                continue
+              fi
+
+              if check_base64 "$RAW_CONTENT"; then
+                  echo "✅ Base64校验通过，进行解码"
+                  echo "$RAW_CONTENT" | base64 -d >> valid_content.tmp
+              else
+                  echo "❌ Base64校验失败，判定不是base64订阅，跳过该链接"
+                  echo "订阅返回内容片段：${RAW_CONTENT:0:150}"
+              fi
+          done
+
+          grep -v '^$' valid_content.tmp > raw.txt
+          echo ""
+          echo "raw.txt 有效总行数：$(wc -l < raw.txt)"
+          echo "----- raw.txt前10行预览 -----"
+          head -n10 raw.txt
+
+          # 动态创建临时generate模板 tmp_gen.yml
+          cat > tmp_gen.yml <<'EOF'
+{
+  "name": "mihomo_out",
+  "input": "./raw.txt",
+  "output": "./mihomo.yaml",
+  "target": "clash",
+  "dup_filter": true
+}
+EOF
+
+          # -g 指定临时生成配置，执行完成程序自动退出，不会启动http服务
+          ./subconverter -g tmp_gen.yml
+
+          # 校验输出文件
+          if [ ! -f "mihomo.yaml" ]; then
+              echo "ERROR: mihomo.yaml 文件生成失败！"
+              exit 1
+          fi
+
+          # 文本层面简单去重，生成base64订阅
+          sort raw.txt | uniq > dedup.txt
+          cat dedup.txt | base64 -w 0 > ../merged_base64.txt
+          cp mihomo.yaml ../
+
+          cd ..
+          ls -lh merged_base64.txt mihomo.yaml
+
+      - name: 提交生成的订阅文件回仓库
+        uses: ad-m/github-push-action@master
+        with:
+          branch: main
+          github_token: ${{ secrets.GITHUB_TOKEN }}
