@@ -75,8 +75,7 @@ jobs:
           echo "----- raw.txt前10行预览 -----"
           head -n10 raw.txt
 
-          # 动态创建临时generate模板 tmp_gen.yml
-          cat > tmp_gen.yml <<'EOF'
+          cat > tmp_gen.yml <<EOF
 {
   "name": "mihomo_out",
   "input": "./raw.txt",
@@ -86,16 +85,13 @@ jobs:
 }
 EOF
 
-          # -g 指定临时生成配置，执行完成程序自动退出，不会启动http服务
           ./subconverter -g tmp_gen.yml
 
-          # 校验输出文件
           if [ ! -f "mihomo.yaml" ]; then
               echo "ERROR: mihomo.yaml 文件生成失败！"
               exit 1
           fi
 
-          # 文本层面简单去重，生成base64订阅
           sort raw.txt | uniq > dedup.txt
           cat dedup.txt | base64 -w 0 > ../merged_base64.txt
           cp mihomo.yaml ../
