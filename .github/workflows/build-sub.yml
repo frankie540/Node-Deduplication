@@ -25,7 +25,7 @@ jobs:
           cd subconverter
           chmod +x subconverter
 
-      - name: 拉取订阅 + 动态生成模板 + 转换输出
+      - name: 拉取订阅 + 生成配置 + 转换输出
         run: |
           cd subconverter
           # ========== 修改这里填入你的订阅链接 ==========
@@ -75,17 +75,17 @@ jobs:
           echo "----- raw.txt前10行预览 -----"
           head -n10 raw.txt
 
-          cat > tmp_gen.yml <<EOF
-{
-  "name": "mihomo_out",
-  "input": "./raw.txt",
-  "output": "./mihomo.yaml",
-  "target": "clash",
-  "dup_filter": true
-}
-EOF
+          # 使用echo逐行输出JSON，彻底抛弃EOF heredoc，规避yaml解析bug
+          echo '{' > tmp_gen.json
+          echo '  "name": "mihomo_out",' >> tmp_gen.json
+          echo '  "input": "./raw.txt",' >> tmp_gen.json
+          echo '  "output": "./mihomo.yaml",' >> tmp_gen.json
+          echo '  "target": "clash",' >> tmp_gen.json
+          echo '  "dup_filter": true' >> tmp_gen.json
+          echo '}' >> tmp_gen.json
 
-          ./subconverter -g tmp_gen.yml
+          # subconverter支持直接读取json格式generate配置
+          ./subconverter -g tmp_gen.json
 
           if [ ! -f "mihomo.yaml" ]; then
               echo "ERROR: mihomo.yaml 文件生成失败！"
