@@ -25,7 +25,7 @@ jobs:
           cd subconverter
           chmod +x subconverter
 
-      - name: 拉取订阅 + 生成配置 + 转换输出
+      - name: 拉取订阅、base64校验、去重、手工组装mihomo.yaml
         run: |
           cd subconverter
           # ========== 修改这里填入你的订阅链接 ==========
@@ -75,25 +75,41 @@ jobs:
           echo "----- raw.txt前10行预览 -----"
           head -n10 raw.txt
 
-          # 使用echo逐行输出JSON，彻底抛弃EOF heredoc，规避yaml解析bug
-          echo '{' > tmp_gen.json
-          echo '  "name": "mihomo_out",' >> tmp_gen.json
-          echo '  "input": "./raw.txt",' >> tmp_gen.json
-          echo '  "output": "./mihomo.yaml",' >> tmp_gen.json
-          echo '  "target": "clash",' >> tmp_gen.json
-          echo '  "dup_filter": true' >> tmp_gen.json
-          echo '}' >> tmp_gen.json
+          # 1. 使用subconverter仅做节点去重，输出去重后的节点链接文本
+          cat raw.txt | ./subconverter --dup_filter=true --output-text > dedup_nodes.txt
 
-          # subconverter支持直接读取json格式generate配置
-          ./subconverter -g tmp_gen.json
-
-          if [ ! -f "mihomo.yaml" ]; then
-              echo "ERROR: mihomo.yaml 文件生成失败！"
+          if [ ! -f "dedup_nodes.txt" ]; then
+              echo "ERROR: 节点去重输出失败！"
               exit 1
           fi
 
-          sort raw.txt | uniq > dedup.txt
-          cat dedup.txt | base64 -w 0 > ../merged_base64.txt
+          DEDUP_COUNT=$(wc -l < dedup_nodes.txt)
+          echo "去重完成，剩余节点数：$DEDUP_COUNT"
+
+          # 2. 手工拼装 mihomo.yaml 基础配置（仅proxy节点，无规则分组）
+          cat > mihomo.tmp <<'YAMLHEAD'
+mixed-port: 7890
+allow-lan: true
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+proxy:
+YAMLHEAD
+
+          # 将每个节点链接转换为yaml "- link://xxx" 列表格式
+          sed 's/^/  - /' dedup_nodes.txt >> mihomo.tmp
+
+          # 移动为最终文件
+          cp mihomo.tmp mihomo.yaml
+
+          if [ ! -f "mihomo.yaml" ]; then
+              echo "ERROR: mihomo.yaml 组装失败！"
+              exit 1
+          fi
+
+          # 生成base64合并订阅（原始节点链接）
+          sort raw.txt | uniq > raw_dedup.txt
+          cat raw_dedup.txt | base64 -w 0 > ../merged_base64.txt
           cp mihomo.yaml ../
 
           cd ..
