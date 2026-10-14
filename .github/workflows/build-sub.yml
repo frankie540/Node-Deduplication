@@ -75,7 +75,7 @@ jobs:
           echo "----- raw.txt前10行预览 -----"
           head -n10 raw.txt
 
-          # 1. 使用subconverter仅做节点去重，输出去重后的节点链接文本
+          # subconverter仅做节点去重，输出文本节点列表
           cat raw.txt | ./subconverter --dup_filter=true --output-text > dedup_nodes.txt
 
           if [ ! -f "dedup_nodes.txt" ]; then
@@ -86,20 +86,18 @@ jobs:
           DEDUP_COUNT=$(wc -l < dedup_nodes.txt)
           echo "去重完成，剩余节点数：$DEDUP_COUNT"
 
-          # 2. 手工拼装 mihomo.yaml 基础配置（仅proxy节点，无规则分组）
-          cat > mihomo.tmp <<'YAMLHEAD'
-mixed-port: 7890
-allow-lan: true
-mode: rule
-log-level: info
-external-controller: 127.0.0.1:9090
-proxy:
-YAMLHEAD
+          # 用echo逐行输出yaml头部，不再使用here‑doc
+          > mihomo.tmp
+          echo "mixed-port: 7890" >> mihomo.tmp
+          echo "allow-lan: true" >> mihomo.tmp
+          echo "mode: rule" >> mihomo.tmp
+          echo "log-level: info" >> mihomo.tmp
+          echo "external-controller: 127.0.0.1:9090" >> mihomo.tmp
+          echo "proxy:" >> mihomo.tmp
 
-          # 将每个节点链接转换为yaml "- link://xxx" 列表格式
+          # 每行前面添加"  - "，转为yaml列表项
           sed 's/^/  - /' dedup_nodes.txt >> mihomo.tmp
 
-          # 移动为最终文件
           cp mihomo.tmp mihomo.yaml
 
           if [ ! -f "mihomo.yaml" ]; then
@@ -107,7 +105,7 @@ YAMLHEAD
               exit 1
           fi
 
-          # 生成base64合并订阅（原始节点链接）
+          # 生成base64合并订阅
           sort raw.txt | uniq > raw_dedup.txt
           cat raw_dedup.txt | base64 -w 0 > ../merged_base64.txt
           cp mihomo.yaml ../
